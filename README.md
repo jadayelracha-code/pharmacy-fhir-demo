@@ -4,7 +4,7 @@ A single-page web app that pulls a unified patient profile from a [HAPI FHIR](ht
 
 Built as a hands-on demo of the FHIR R4 resource model and REST API. No framework, no build step — one HTML file, vanilla JavaScript, ~450 lines.
 
-> **Live demo:** _coming soon (GitHub Pages)_
+> **Live demo:** [jadayelracha-code.github.io/pharmacy-fhir-demo](https://jadayelracha-code.github.io/pharmacy-fhir-demo/)
 > **Backend:** Public HAPI sandbox at [`hapi.fhir.org/baseR4`](https://hapi.fhir.org/baseR4)
 
 ---
