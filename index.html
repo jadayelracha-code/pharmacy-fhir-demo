@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pharmacy Patient Profile — HAPI FHIR Demo</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --border: #e3e8ef;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --warn: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 24px; }
+  .search-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type="text"] {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    background: var(--card);
+  }
+  button {
+    padding: 10px 16px;
+    background: var(--accent);
+    color: white;
+    border: 0;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  button.secondary:hover { background: #f0f4f8; }
+  .results { display: flex; flex-direction: column; gap: 8px; }
+  .result-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+  }
+  .result-card:hover { border-color: var(--accent); }
+  .result-card .name { font-weight: 600; }
+  .result-card .meta { color: var(--muted); font-size: 13px; }
+  .profile { display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card h2 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+  }
+  .card h2 .count {
+    display: inline-block;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+  .demographics .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .demographics .field { min-width: 140px; }
+  .demographics .label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+  .demographics .value { font-size: 16px; font-weight: 500; }
+  ul.items { margin: 0; padding: 0; list-style: none; }
+  ul.items li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  ul.items li:last-child { border-bottom: 0; }
+  .item-title { font-weight: 500; }
+  .item-meta { color: var(--muted); font-size: 13px; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .badge.severe { background: #fee2e2; color: var(--danger); }
+  .badge.moderate { background: #fef3c7; color: var(--warn); }
+  .badge.mild { background: #d1fae5; color: var(--ok); }
+  .badge.active { background: #dbeafe; color: var(--accent); }
+  .empty { color: var(--muted); font-style: italic; }
+  .status {
+    padding: 12px 16px;
+    background: var(--card);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .error { color: var(--danger); }
+  a.back {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  a.back:hover { text-decoration: underline; }
+  code {
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>💊 Pharmacy Patient Profile</h1>
+    <div class="sub">FHIR demo — <code>hapi.fhir.org/baseR4</code></div>
+  </div>
+  <button class="secondary" id="seed-btn">+ Seed demo patient</button>
+</header>
+
+<main>
+  <div id="search-view">
+    <div class="search-row">
+      <input type="text" id="search-input" placeholder="Search patient by name (e.g. Jadayel)" />
+      <button id="search-btn">Search</button>
+    </div>
+    <div id="results" class="results"></div>
+  </div>
+  <div id="profile-view" style="display:none;"></div>
+</main>
+
+<script>
+const FHIR_BASE = "https://hapi.fhir.org/baseR4";
+
+const searchInput = document.getElementById("search-input");
+const searchBtn = document.getElementById("search-btn");
+const seedBtn = document.getElementById("seed-btn");
+const resultsEl = document.getElementById("results");
+const searchView = document.getElementById("search-view");
+const profileView = document.getElementById("profile-view");
+
+searchBtn.addEventListener("click", runSearch);
+searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+seedBtn.addEventListener("click", seedDemoPatient);
+
+async function fhirGet(path) {
+  const res = await fetch(`${FHIR_BASE}${path}`, {
+    headers: { Accept: "application/fhir+json" },
+  });
+  if (!res.ok) throw new Error(`FHIR ${res.status}: ${path}`);
+  return res.json();
+}
+
+async function fhirPost(resourceType, body) {
+  const res = await fetch(`${FHIR_BASE}/${resourceType}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/fhir+json",
+      Accept: "application/fhir+json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`FHIR ${res.status} creating ${resourceType}`);
+  return res.json();
+}
+
+async function runSearch() {
+  const q = searchInput.value.trim();
+  if (!q) return;
+  resultsEl.innerHTML = `<div class="status">Searching…</div>`;
+  try {
+    const bundle = await fhirGet(`/Patient?name=${encodeURIComponent(q)}&_count=20`);
+    renderSearchResults(bundle);
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="status error">Error: ${err.message}</div>`;
+  }
+}
+
+function renderSearchResults(bundle) {
+  const entries = bundle.entry || [];
+  if (!entries.length) {
+    resultsEl.innerHTML = `<div class="status">No patients found.</div>`;
+    return;
+  }
+  resultsEl.innerHTML = "";
+  entries.forEach(({ resource: p }) => {
+    const card = document.createElement("div");
+    card.className = "result-card";
+    card.innerHTML = `
+      <div class="name">${formatName(p)}</div>
+      <div class="meta">ID: ${p.id} · ${p.gender || "—"} · DOB ${p.birthDate || "—"}</div>
+    `;
+    card.addEventListener("click", () => openProfile(p.id));
+    resultsEl.appendChild(card);
+  });
+}
+
+async function openProfile(patientId) {
+  searchView.style.display = "none";
+  profileView.style.display = "block";
+  profileView.innerHTML = `<div class="status">Loading profile…</div>`;
+  try {
+    const [patient, allergyBundle, medBundle, conditionBundle] = await Promise.all([
+      fhirGet(`/Patient/${patientId}`),
+      fhirGet(`/AllergyIntolerance?patient=Patient/${patientId}&_count=50`),
+      fhirGet(`/MedicationRequest?subject=Patient/${patientId}&status=active&_count=50`),
+      fhirGet(`/Condition?subject=Patient/${patientId}&_count=50`),
+    ]);
+    renderProfile(patient, bundleEntries(allergyBundle), bundleEntries(medBundle), bundleEntries(conditionBundle));
+  } catch (err) {
+    profileView.innerHTML = `<div class="status error">Error: ${err.message}</div>`;
+  }
+}
+
+function bundleEntries(bundle) {
+  return (bundle.entry || []).map((e) => e.resource);
+}
+
+function renderProfile(patient, allergies, meds, conditions) {
+  profileView.innerHTML = `
+    <a class="back" id="back-link">← Back to search</a>
+    <div class="profile">
+      <div class="card demographics">
+        <h2>Patient</h2>
+        <div class="row">
+          <div class="field"><div class="label">Name</div><div class="value">${formatName(patient)}</div></div>
+          <div class="field"><div class="label">ID</div><div class="value">${patient.id}</div></div>
+          <div class="field"><div class="label">Gender</div><div class="value">${patient.gender || "—"}</div></div>
+          <div class="field"><div class="label">Date of birth</div><div class="value">${patient.birthDate || "—"}</div></div>
+          <div class="field"><div class="label">Phone</div><div class="value">${getContact(patient, "phone") || "—"}</div></div>
+          <div class="field"><div class="label">Email</div><div class="value">${getContact(patient, "email") || "—"}</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Allergies <span class="count">${allergies.length}</span></h2>
+        ${renderAllergies(allergies)}
+      </div>
+
+      <div class="card">
+        <h2>Active medications <span class="count">${meds.length}</span></h2>
+        ${renderMeds(meds)}
+      </div>
+
+      <div class="card">
+        <h2>Conditions <span class="count">${conditions.length}</span></h2>
+        ${renderConditions(conditions)}
+      </div>
+    </div>
+  `;
+  document.getElementById("back-link").addEventListener("click", () => {
+    profileView.style.display = "none";
+    searchView.style.display = "block";
+  });
+}
+
+function renderAllergies(items) {
+  if (!items.length) return `<div class="empty">No known allergies.</div>`;
+  return `<ul class="items">${items.map((a) => {
+    const label = a.code?.text || a.code?.coding?.[0]?.display || "(unspecified)";
+    const sev = (a.reaction?.[0]?.severity || "").toLowerCase();
+    const sevBadge = sev ? `<span class="badge ${sev}">${sev}</span>` : "";
+    return `<li><span class="item-title">${label}</span>${sevBadge}</li>`;
+  }).join("")}</ul>`;
+}
+
+function renderMeds(items) {
+  if (!items.length) return `<div class="empty">No active medications on file.</div>`;
+  return `<ul class="items">${items.map((m) => {
+    const label = m.medicationCodeableConcept?.text
+              || m.medicationCodeableConcept?.coding?.[0]?.display
+              || m.medicationReference?.display
+              || "(unspecified)";
+    const dosage = m.dosageInstruction?.[0]?.text || "";
+    return `<li>
+      <div><div class="item-title">${label}</div>${dosage ? `<div class="item-meta">${dosage}</div>` : ""}</div>
+      <span class="badge active">active</span>
+    </li>`;
+  }).join("")}</ul>`;
+}
+
+function renderConditions(items) {
+  if (!items.length) return `<div class="empty">No conditions on file.</div>`;
+  return `<ul class="items">${items.map((c) => {
+    const label = c.code?.text || c.code?.coding?.[0]?.display || "(unspecified)";
+    const status = c.clinicalStatus?.coding?.[0]?.code || "";
+    return `<li><span class="item-title">${label}</span>${status ? `<span class="item-meta">${status}</span>` : ""}</li>`;
+  }).join("")}</ul>`;
+}
+
+function formatName(p) {
+  const n = (p.name || [])[0];
+  if (!n) return "(no name)";
+  const given = (n.given || []).join(" ");
+  const family = n.family || "";
+  return `${given} ${family}`.trim() || "(no name)";
+}
+
+function getContact(p, system) {
+  return (p.telecom || []).find((t) => t.system === system)?.value;
+}
+
+async function seedDemoPatient() {
+  seedBtn.disabled = true;
+  seedBtn.textContent = "Seeding…";
+  try {
+    const unique = Date.now().toString().slice(-6);
+    const patient = await fhirPost("Patient", {
+      resourceType: "Patient",
+      name: [{ family: `Demo-Pharmacy-${unique}`, given: ["Maria"] }],
+      gender: "female",
+      birthDate: "1972-03-14",
+      telecom: [
+        { system: "phone", value: "+351 911 222 333" },
+        { system: "email", value: "maria.demo@example.com" },
+      ],
+    });
+    const ref = { reference: `Patient/${patient.id}` };
+    const dependents = [
+      ["AllergyIntolerance", {
+        resourceType: "AllergyIntolerance",
+        clinicalStatus: { coding: [{ system: "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical", code: "active" }] },
+        patient: ref,
+        code: { coding: [{ system: "http://snomed.info/sct", code: "227493005", display: "Peanuts" }], text: "Peanuts" },
+        reaction: [{ severity: "severe", manifestation: [{ text: "Anaphylaxis" }] }],
+      }],
+      ["AllergyIntolerance", {
+        resourceType: "AllergyIntolerance",
+        clinicalStatus: { coding: [{ system: "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical", code: "active" }] },
+        patient: ref,
+        code: { coding: [{ system: "http://snomed.info/sct", code: "373270004", display: "Penicillin" }], text: "Penicillin" },
+        reaction: [{ severity: "moderate", manifestation: [{ text: "Rash" }] }],
+      }],
+      ["MedicationRequest", {
+        resourceType: "MedicationRequest",
+        status: "active",
+        intent: "order",
+        subject: ref,
+        medicationCodeableConcept: { coding: [{ system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "314076", display: "Lisinopril 10mg" }], text: "Lisinopril 10mg" },
+        dosageInstruction: [{ text: "1 tablet by mouth once daily" }],
+      }],
+      ["MedicationRequest", {
+        resourceType: "MedicationRequest",
+        status: "active",
+        intent: "order",
+        subject: ref,
+        medicationCodeableConcept: { coding: [{ system: "http://www.nlm.nih.gov/research/umls/rxnorm", code: "860975", display: "Metformin 500mg" }], text: "Metformin 500mg" },
+        dosageInstruction: [{ text: "1 tablet by mouth twice daily with meals" }],
+      }],
+      ["Condition", {
+        resourceType: "Condition",
+        clinicalStatus: { coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-clinical", code: "active" }] },
+        subject: ref,
+        code: { coding: [{ system: "http://snomed.info/sct", code: "38341003", display: "Hypertension" }], text: "Hypertension" },
+      }],
+      ["Condition", {
+        resourceType: "Condition",
+        clinicalStatus: { coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-clinical", code: "active" }] },
+        subject: ref,
+        code: { coding: [{ system: "http://snomed.info/sct", code: "44054006", display: "Type 2 diabetes mellitus" }], text: "Type 2 diabetes" },
+      }],
+    ];
+    const failures = [];
+    for (const [resourceType, body] of dependents) {
+      try {
+        await fhirPost(resourceType, body);
+      } catch (err) {
+        failures.push(`${resourceType}: ${err.message}`);
+      }
+    }
+    if (failures.length) {
+      console.warn("Some dependent resources failed:", failures);
+    }
+    searchInput.value = `Demo-Pharmacy-${unique}`;
+    await runSearch();
+  } catch (err) {
+    alert("Seed failed: " + err.message);
+  } finally {
+    seedBtn.disabled = false;
+    seedBtn.textContent = "+ Seed demo patient";
+  }
+}
+</script>
+</body>
+</html>
